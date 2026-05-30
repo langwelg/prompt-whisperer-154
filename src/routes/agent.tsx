@@ -101,12 +101,13 @@ function AgentPage() {
                     }
                     if (part.type.startsWith("tool-")) {
                       const toolPart = part as ToolPart;
+                      const headerProps =
+                        toolPart.type === "dynamic-tool"
+                          ? { type: "dynamic-tool" as const, state: toolPart.state, toolName: (toolPart as { toolName?: string }).toolName ?? "tool" }
+                          : { type: toolPart.type, state: toolPart.state };
                       return (
                         <Tool key={i} defaultOpen={false}>
-                          <ToolHeader
-                            type={toolPart.type}
-                            state={toolPart.state}
-                          />
+                          <ToolHeader {...headerProps} />
                           <ToolContent>
                             <ToolInput input={toolPart.input} />
                             <ToolOutput
