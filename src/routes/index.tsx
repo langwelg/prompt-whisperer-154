@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import {
   schedule,
@@ -53,12 +53,20 @@ function Index() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="mx-auto max-w-6xl px-6 py-10">
-        <header className="mb-8">
-          <h1 className="text-3xl font-bold tracking-tight">Esports Organizer</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Deterministic match scheduler with conflict detection. Paste tournament
-            JSON and run the scheduler — same logic as the Express version.
-          </p>
+        <header className="mb-8 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Esports Organizer</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Deterministic match scheduler with conflict detection. Paste tournament
+              JSON and run the scheduler — same logic as the Express version.
+            </p>
+          </div>
+          <Link
+            to="/agent"
+            className="shrink-0 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            Try the Agent →
+          </Link>
         </header>
 
         <div className="grid gap-6 lg:grid-cols-2">
