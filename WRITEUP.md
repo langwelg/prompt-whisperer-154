@@ -1,100 +1,141 @@
 # Project 2 — Esports Tournament Scheduling Agent
 
-## What the app does
+**Deployed app:** https://prompt-whisperer-154.lovable.app (agent at `/agent`)
+**Repository:** https://github.com/langwelg/prompt-whisperer-154
+
+---
+
+## 1. What the app does
 
 Two modes share one tournament dataset (teams, matches, round windows):
 
-1. **Deterministic scheduler** (`/`) — a pure function in `src/lib/scheduler.ts` that
-   tries to place each match inside its round window using the intersection of both
-   teams' availability. Returns either a `scheduled` slot or a `conflict` with a
-   reason (`no overlap`, `outside round window`, etc.).
-2. **Agent** (`/agent`) — a chat UI backed by an LLM that can call tools to read
-   and mutate the same dataset, then re-run the scheduler.
+- **Deterministic scheduler** (`/`) — a pure function in `src/lib/scheduler.ts`
+  that places each match inside its round window using the intersection of
+  both teams' availability. Returns either a `scheduled` slot or a `conflict`
+  with a reason (`no overlap`, `outside round window`, etc.).
+- **Agent** (`/agent`) — a chat UI backed by an LLM that can call tools to
+  read and mutate the same dataset, then re-run the scheduler.
 
-## What happens when the agent schedules a match
+## 2. System architecture
 
-The server route `src/routes/api/chat.ts` calls `streamText` from the Vercel AI
-SDK with `stopWhen: stepCountIs(50)`, the system prompt, and the tool set from
-`src/lib/scheduler-tools.ts`. The loop is: model emits a tool call → SDK runs
-the tool's `execute` → result is appended to the message history → model decides
-the next step → repeat until it produces a final text answer or hits the step
-cap.
+```
+Browser  ── /agent (TanStack Start route, src/routes/agent.tsx)
+   │        useChat + DefaultChatTransport → POST /api/chat
+   ▼
+Server route  src/routes/api/chat.ts
+   │   streamText({ model, tools, stopWhen: stepCountIs(50) })
+   ▼
+Lovable AI Gateway  →  google/gemini-3-flash-preview
+   │
+   ▼
+Tools (src/lib/scheduler-tools.ts, Zod-validated)
+   │   read/write a module-level tournament state object
+   ▼
+Deterministic scheduler (src/lib/scheduler.ts)
+```
 
-### Tools the model can call
+- **Frontend:** TanStack Start + React, AI Elements (`Conversation`,
+  `Message`, `Tool`, `PromptInput`) so tool calls render as expandable
+  cards showing JSON input and output.
+- **Backend:** TanStack Start server route at `src/routes/api/chat.ts`
+  using `streamText` from the Vercel AI SDK and the Lovable AI Gateway
+  provider (`src/lib/ai-gateway.server.ts`). `LOVABLE_API_KEY` stays
+  server-side.
+- **State:** in-memory object in `scheduler-tools.ts`. Resets on server
+  restart — intentional for a demo, called out as a limitation below.
 
-All tools are defined with Zod input schemas in `src/lib/scheduler-tools.ts`:
+## 3. Agentic patterns implemented
 
-| Tool | Reads / Writes | Purpose |
+- **Tool use with a typed contract.** Six AI SDK `tool()` definitions, each
+  with a narrow Zod `inputSchema` so the model can't pass malformed args.
+- **Multi-step autonomous loop.** `stopWhen: stepCountIs(50)` lets the SDK
+  drive a model→tool→model→tool cycle until the model produces a final
+  text answer or hits the cap.
+- **Plan → act → verify.** The system prompt requires the model to start
+  with `list_tournament`, then act, then re-run `run_scheduler` to confirm
+  any fix actually resolved the conflict.
+- **Self-correction from tool errors.** Zod validation failures are returned
+  to the loop as errors; the model retries with corrected arguments.
+- **Read/write separation surfaced in UI.** Every tool call is expandable in
+  the transcript so the grader can see exactly which tools fired, in what
+  order, with what arguments and results.
+
+### Tools
+
+| Tool | R/W | Purpose |
 |---|---|---|
-| `list_tournament` | read | Dump teams, matches, round windows |
-| `check_team_availability` | read | Availability windows for one team |
-| `find_overlap` | read | Intersect two teams' availability (debug "no overlap") |
-| `run_scheduler` | read | Run the deterministic scheduler, return scheduled + conflicts |
-| `extend_round_window` | **write** | Push a round's end time out by N minutes |
-| `add_team_availability` | **write** | Add an ISO window to a team |
+| `list_tournament` | R | Dump teams, matches, round windows |
+| `check_team_availability` | R | One team's availability |
+| `find_overlap` | R | Intersect two teams' windows (debug "no overlap") |
+| `run_scheduler` | R | Run deterministic scheduler, return scheduled + conflicts |
+| `extend_round_window` | **W** | Push a round's end time out by N minutes |
+| `add_team_availability` | **W** | Add an ISO availability window to a team |
 
-State lives in a module-level object in `scheduler-tools.ts` and resets on
-server restart (intentional for the demo — no DB needed).
+### What the model decides vs. what's hard-coded
 
-### What the model decides vs. what is hard-coded
+- **Hard-coded:** placement math, overlap math, conflict reasons, Zod
+  input validation, the 50-step cap.
+- **Model decides:** which tool to call, in what order, with what arguments,
+  and whether a given conflict is better fixed by extending a window or
+  adding availability.
 
-- **Hard-coded:** match placement math, overlap math, what counts as a conflict,
-  input validation (Zod), the 50-step cap.
-- **Model decides:** which tool to call, in what order, with what arguments;
-  whether a conflict is best fixed by extending a window vs. adding availability;
-  how to summarize results to the user.
+## 4. How I iterated on draft feedback
 
-The system prompt tells it to always start with `list_tournament`, re-run
-`run_scheduler` after any write, and report match IDs and times in markdown
-tables.
+Professor's draft feedback flagged three things: **no repo, no write-up, no
+way to verify agentic behavior.** Changes for the final:
 
-### Where it breaks
+1. **Pushed to GitHub** via Lovable's GitHub integration so the code is
+   inspectable (link at the top).
+2. **Added this write-up** at `WRITEUP.md` in the repo root, covering
+   tools, decisions, and failure modes — the things the rubric asks for.
+3. **Made agentic behavior verifiable in the UI.** The AI Elements `Tool`
+   component renders every tool call as an expandable card showing the
+   exact JSON arguments and the tool's return value, so a grader can
+   confirm tools are actually firing and not just narrated in prose.
+4. **Tightened tool boundaries** after watching the model conflate
+   capabilities in the draft — split `find_overlap` out from
+   `check_team_availability` so each tool does one thing.
+5. **Wrote a "where it breaks" section** (below) so limitations are
+   documented instead of discovered.
 
-- **State is in memory.** Restart the dev server and edits vanish. Fine for a
-  single chat session, wrong for anything real.
-- **No approval gate on writes.** `extend_round_window` and `add_team_availability`
-  execute as soon as the model calls them. For production I'd wrap them with
-  `needsApproval` so the organizer confirms.
-- **One conversation, no persistence.** Reloading the page wipes history.
-- **Model hallucination on round names.** When I asked it to "extend SF", it
-  sometimes invented a round code. Zod rejects it, the error goes back into
-  the loop, and it usually self-corrects on the next step — but a stricter
-  enum on `round` would catch this at the schema level.
-- **No retries on gateway errors.** If the Lovable AI Gateway returns a 429 or
-  credit error, the stream surfaces it to the UI but the agent doesn't back off.
+## 5. Where it breaks (known limitations)
 
-## How I built it (and what I directed the AI to do)
+- **State is in memory** and resets on server restart.
+- **No approval gate on writes.** `extend_round_window` and
+  `add_team_availability` execute as soon as the model calls them. Should
+  be wrapped in `needsApproval` for production.
+- **Round-code hallucination.** The model occasionally invents a round
+  code; Zod rejects it and the loop self-corrects, but a stricter enum on
+  `round` would catch it at the schema.
+- **No retry/backoff** on gateway 429/credit errors — the error surfaces
+  to the UI but the agent doesn't recover.
+- **One conversation, no persistence** (chosen during draft scoping).
 
-I used Lovable (which uses Claude under the hood) to scaffold and iterate.
-Concretely, I directed it to:
-
-1. Generate a deterministic scheduler first (`src/lib/scheduler.ts`) with
-   sample data, so the agent had something real to call.
-2. Wrap each scheduler capability as a single-purpose AI SDK `tool` with a
-   Zod schema — explicitly *not* one big "do everything" tool.
-3. Wire `streamText` + `stepCountIs(50)` in a TanStack Start server route at
-   `src/routes/api/chat.ts`, using the Lovable AI Gateway provider with
-   `google/gemini-3-flash-preview`.
-4. Build the chat UI with AI Elements (`Conversation`, `Message`, `Tool`,
-   `PromptInput`) so tool calls and their JSON inputs/outputs are visible in
-   the transcript — that's the verifiable "agentic behavior" surface.
-
-I wrote the system prompt and the tool descriptions myself, and I picked the
-tool boundaries (e.g. splitting `find_overlap` out from `check_team_availability`
-after seeing the model conflate them).
-
-## How to verify the agentic behavior
+## 6. How to verify the agentic behavior
 
 1. Open `/agent`.
-2. Send: **"Schedule the tournament."** — expect `list_tournament` →
+2. Send: **"Schedule the tournament."** → expect `list_tournament` →
    `run_scheduler`, then a summary with conflicts.
-3. Send: **"Why does QF2 conflict, and can you fix it?"** — expect
-   `find_overlap` or `check_team_availability` → `extend_round_window` or
-   `add_team_availability` → `run_scheduler` again → confirmation.
-4. Every tool call is expandable in the UI to show the exact JSON arguments
-   and the result the tool returned.
+3. Send: **"Why does QF2 conflict, and can you fix it?"** → expect
+   `find_overlap` or `check_team_availability` → `extend_round_window`
+   or `add_team_availability` → `run_scheduler` again → confirmation.
+4. Expand any tool card in the transcript to see the JSON args and result.
 
-## Key files
+## 7. AI I directed
+
+Built in Lovable (Claude under the hood). I directed it to:
+
+1. Write the deterministic scheduler first so the agent had real logic
+   to call.
+2. Wrap each capability as a single-purpose `tool()` with a narrow Zod
+   schema — not one "do everything" tool.
+3. Wire `streamText` + `stepCountIs(50)` in a TanStack Start server route.
+4. Render tool calls with AI Elements so JSON inputs/outputs are visible.
+
+I wrote the system prompt, picked the tool boundaries, and chose the
+model (Gemini 3 Flash via Lovable AI Gateway).
+
+## 8. Key files
 
 - `src/lib/scheduler.ts` — deterministic scheduler
 - `src/lib/scheduler-tools.ts` — tool definitions + in-memory state
