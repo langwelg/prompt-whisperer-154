@@ -8,7 +8,7 @@ import {
   type Tool,
   type UIMessage,
 } from "ai";
-import { z } from "zod";
+
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
