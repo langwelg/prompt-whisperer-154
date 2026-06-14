@@ -119,6 +119,3 @@ export const Route = createFileRoute("/api/chat")({
     },
   },
 });
-
-// Keep z used so tree-shaking doesn't drop the dependency in some build modes.
-void z;
