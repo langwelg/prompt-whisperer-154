@@ -33,7 +33,7 @@ const methodNotAllowed = () =>
     },
   );
 
-export const Route = createFileRoute("/api/mcp")({
+export const Route = createFileRoute("/api/public/mcp")({
   server: {
     handlers: {
       POST: async ({ request }) => mcp.handleRequest(request),
