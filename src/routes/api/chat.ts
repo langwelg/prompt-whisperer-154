@@ -71,7 +71,7 @@ export const Route = createFileRoute("/api/chat")({
 
         // Open an MCP client against this same deployment's /api/mcp server.
         const origin = new URL(request.url).origin;
-        const mcpUrl = new URL("/api/mcp", origin);
+        const mcpUrl = new URL("/api/public/mcp", origin);
         const transport = new StreamableHTTPClientTransport(mcpUrl);
         const mcpClient = new Client(
           { name: "scheduler-agent-chat", version: "1.0.0" },
