@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { useState } from "react";
@@ -66,16 +66,16 @@ function AgentPage() {
         <div className="mx-auto flex max-w-4xl items-center justify-between">
           <div className="flex items-center gap-2">
             <Trophy className="h-5 w-5 text-primary" />
-            <h1 className="text-lg font-semibold">Scheduling Agent</h1>
+            <div>
+              <h1 className="text-lg font-semibold">Esports Scheduling Agent</h1>
+              <p className="text-xs text-muted-foreground">
+                Model-driven tool loop · 6 MCP tools · Gemini 3 Flash
+              </p>
+            </div>
           </div>
-          <Link
-            to="/"
-            className="text-xs text-muted-foreground hover:text-foreground"
-          >
-            ← Back to scheduler
-          </Link>
         </div>
       </header>
+
 
       <main className="mx-auto flex w-full max-w-4xl flex-1 flex-col px-4 py-4">
         <Conversation className="flex-1">
