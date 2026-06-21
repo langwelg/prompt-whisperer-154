@@ -173,4 +173,79 @@ Built in Lovable, primarily using Claude. I directed it to:
 - `src/lib/scheduler.ts` — deterministic scheduling math
 - `src/routes/api/chat.ts` — MCP client + LLM loop
 - `src/routes/agent.tsx` — chat UI with AI Elements tool cards
-- `src/routes/index.tsx` — deterministic scheduler UI
+- `src/routes/index.tsx` — redirects `/` to `/agent`
+- `src/routes/scheduler.tsx` — deterministic scheduler debug view
+
+## 10. Prompt engineering history
+
+The system prompt in `src/routes/api/chat.ts` went through three revisions.
+Each one was driven by a failure I saw in actual chats.
+
+**v1 (P2 draft) — too terse, model skipped tools:**
+```
+You are a scheduling assistant. Use the tools to help the user schedule
+esports matches.
+```
+*Failure:* Model would answer from the empty conversation without ever
+calling `list_tournament`, hallucinating team names like "Team A / Team B."
+
+**v2 — added an explicit ordering, but rigid:**
+```
+You are the scheduling agent. ALWAYS call list_tournament first, then
+run_scheduler, then report results.
+```
+*Failure:* Model robotically called those two tools even when the user
+asked something narrow like *"is Team Phoenix free Saturday?"* — wasted
+steps, and it never used `check_team_availability` or `find_overlap`.
+
+**v3 (current) — plan-act-verify with conditional tool guidance:**
+```
+1. Start by calling list_tournament so you know what teams and matches exist.
+2. When asked to schedule, call run_scheduler and report the result clearly.
+3. If there are conflicts, investigate with find_overlap or
+   check_team_availability, then propose a fix and apply it with
+   extend_round_window or add_team_availability.
+4. After any change, re-run run_scheduler to confirm the conflict is resolved.
+5. Be concise. Show match IDs, times, and reasons. Use markdown tables.
+Always say what you're about to do before calling a tool, and summarize
+the outcome after.
+```
+*Why it works:* tools are described by *situation*, not by fixed order.
+The "re-run after any write" rule produces the verify step that makes the
+loop feel agentic instead of one-shot. The "say what you're about to do"
+rule makes traces auditable in the AI Elements tool cards.
+
+## 11. Evaluation
+
+I ran 6 scripted prompts against the deployed agent. "Pass" = the model
+reached the correct end-state autonomously, with no human follow-up.
+
+| # | Prompt | Expected behavior | Result |
+|---|--------|-------------------|--------|
+| 1 | "List the tournament." | 1 tool call: `list_tournament`. | Pass |
+| 2 | "Schedule everything." | `list_tournament` → `run_scheduler`, report scheduled + conflicts. | Pass |
+| 3 | "Schedule and fix any conflicts." | Above + `find_overlap` / `check_team_availability` → `extend_round_window` or `add_team_availability` → `run_scheduler` again. Conflicts = 0 at end. | Pass (3–5 tool calls typical) |
+| 4 | "Is Team Phoenix free Saturday afternoon?" | Single `check_team_availability` call, no full schedule run. | Pass (v2 prompt failed this; v3 fixed it) |
+| 5 | "Extend SF2 by 60 minutes." | Model attempts `extend_round_window({round:"SF2",...})`, Zod enum rejects, model retries with `"SF"` based on error hint. | Pass (self-correction in 2 steps) |
+| 6 | "Add availability for Team Nobody on Saturday 2pm–4pm UTC." | `add_team_availability` returns `{error, knownTeams:[...]}`; model surfaces the list to the user instead of inventing a team. | Pass |
+
+**What "good" means here:**
+- Correctness: conflicts go to 0 after the agent's fix loop (case 3).
+- Restraint: agent doesn't over-call tools on narrow questions (case 4).
+- Recovery: agent uses validation errors to self-correct (cases 5, 6).
+
+**Documented failures:**
+- Long sessions occasionally hit the 50-step cap when the model loops on a
+  truly unschedulable match instead of reporting "no fix possible." Fix
+  for next iteration: a `report_unschedulable` tool to give the model a
+  clean exit.
+- Cold-start state resets mean a second user can see partial mutations
+  from the first. Fix: per-session state keyed by a thread id.
+
+## 12. Reflection — what I'd do with more time
+
+- Per-session state in a real DB (Lovable Cloud) so multiple organizers
+  don't share one bracket.
+- `needsApproval` on the two write tools so the user confirms mutations.
+- Eval harness scripted with `mcp-inspector` so the 6 cases above run on
+  every commit instead of by hand.
