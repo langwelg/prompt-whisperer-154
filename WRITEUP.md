@@ -15,11 +15,9 @@ investigates conflicts, mutates availability or round windows, and re-runs
 until the bracket is clean.
 
 - **`/`** redirects to **`/agent`** — the agent chat is the primary UI.
-- **`/scheduler`** is a debug view of the deterministic scheduler
-  (`src/lib/scheduler.ts`) for inspection; it is not the main interface.
-- Both surfaces share one in-memory tournament state
-  (`src/lib/scheduler-state.server.ts`), so the agent's writes are visible
-  in the debug view.
+- The deterministic scheduler in `src/lib/scheduler.ts` is exercised by
+  the agent through the `run_scheduler` MCP tool; its output is rendered
+  inside the chat as expandable AI Elements tool cards.
 
 **Who it's for:** small-tournament organizers (campus esports clubs,
 weekend LAN events) who today juggle availability in spreadsheets.
