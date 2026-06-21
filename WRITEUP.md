@@ -57,6 +57,41 @@ Deterministic scheduler  src/lib/scheduler.ts
 - **Agent loop:** `streamText` with `stopWhen: stepCountIs(50)` — the
   model can chain up to 50 tool calls in one turn before stopping.
 
+### How the agent queries the shared dataset
+
+The agent does not "see" the dataset directly; it must query it through
+MCP tools. On every chat POST, `src/routes/api/chat.ts` performs these
+steps in order:
+
+1. **Discovery.** It opens an MCP client over HTTP to
+   `/api/public/mcp` and calls `mcpClient.listTools()`. The returned
+   list contains the 6 scheduling tools with their Zod JSON schemas.
+2. **Wrapping.** Each MCP tool descriptor is converted into an AI SDK
+   `Tool` whose `execute()` function calls `mcpClient.callTool(name,
+   arguments)` and returns the result content.
+3. **Model inference.** `streamText` sends the user message + system
+   prompt + wrapped tools to the LLM. The LLM decides which tool to
+   invoke and with what arguments.
+4. **Execution.** The AI SDK routes the model's chosen tool call to the
+   wrapper's `execute()`, which serializes the arguments and POSTs them
+   to the MCP server.
+5. **Shared state.** The MCP server handler calls the pure executor
+   functions in `src/lib/scheduler-state.server.ts`. All executors read
+   from — and write to — the same module-level `state` object
+   (`{ teams, matches, windows }`). This means a read like
+   `list_tournament` and a write like `extend_round_window` operate on
+   identical data without any copy or cache layer.
+6. **Iteration.** The tool result is returned to the model as a
+   `function` message in the same conversation. If the result shows
+   unresolved conflicts, the model can immediately call another tool
+   (e.g. `find_overlap`) in the next step of the same `streamText`
+   loop.
+
+Because the MCP server is on the same deployment, the round-trip is
+internal HTTP, but the contract is genuine MCP: an external client such
+as Claude Desktop or `mcp-inspector` can hit `/api/public/mcp` and
+receive the exact same tool definitions and state.
+
 ## 3. The MCP server I built
 
 `src/routes/api/public/mcp.ts` runs an MCP Streamable HTTP server
