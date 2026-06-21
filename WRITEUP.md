@@ -8,15 +8,21 @@
 
 ## 1. What the app does
 
-Two modes share one tournament dataset (teams, matches, round windows):
+A tournament organizer asks in chat: *"schedule everything and fix any
+conflicts."* An LLM connects to an MCP server I wrote, discovers 6
+scheduling tools, and autonomously reads the dataset, runs the scheduler,
+investigates conflicts, mutates availability or round windows, and re-runs
+until the bracket is clean.
 
-- **Deterministic scheduler** (`/`) — pure function in `src/lib/scheduler.ts`
-  that places each match inside its round window using the intersection of
-  both teams' availability. Returns `scheduled` slots or `conflict` rows with
-  a reason (`no overlap`, `outside round window`, etc.).
-- **Agent** (`/agent`) — chat UI where an LLM connects to an MCP server I
-  wrote, lists its tools, and calls them autonomously to read, debug, and
-  fix the same dataset.
+- **`/`** redirects to **`/agent`** — the agent chat is the primary UI.
+- **`/scheduler`** is a debug view of the deterministic scheduler
+  (`src/lib/scheduler.ts`) for inspection; it is not the main interface.
+- Both surfaces share one in-memory tournament state
+  (`src/lib/scheduler-state.server.ts`), so the agent's writes are visible
+  in the debug view.
+
+**Who it's for:** small-tournament organizers (campus esports clubs,
+weekend LAN events) who today juggle availability in spreadsheets.
 
 ## 2. System architecture
 
