@@ -172,7 +172,6 @@ Built in Lovable, primarily using Claude. I directed it to:
 - `src/routes/api/chat.ts` — MCP client + LLM loop
 - `src/routes/agent.tsx` — chat UI with AI Elements tool cards
 - `src/routes/index.tsx` — redirects `/` to `/agent`
-- `src/routes/scheduler.tsx` — deterministic scheduler debug view
 
 ## 10. Prompt engineering history
 
